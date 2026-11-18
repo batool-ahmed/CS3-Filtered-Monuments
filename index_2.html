@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        /* hover label that shows only the monument name */
+        /* white, rounded label box for hover tooltip and click popup */
+        .hover-label {
+            font-size: 13px;
+            padding: 6px 12px;
+            border-radius: 14px;
+            border: none;
+            background: #fff;
+            color: #323232;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        }
+        .hover-label:before { display: none; }
+        .leaflet-popup-content-wrapper { background: #fff; border-radius: 14px; }
+        .leaflet-popup-tip { background: #fff; }
+        .name-popup { font-size: 14px; padding: 2px 4px; }
+        </style>
+        <title>Pakistan Monuments</title>
+    </head>
+    <body>
+        <div id="map"></div>
+        <div id="err" style="display:none;position:fixed;top:10px;left:50px;z-index:9999;background:#fff3cd;border:1px solid #c90;padding:8px 12px;font:13px sans-serif;max-width:60%"></div>
+        <script>
+        function showErr(m){var e=document.getElementById('err');e.style.display='block';e.innerHTML+=m+'<br>';}
+        window.onerror=function(m,s,l){showErr('JS error: '+m+' ('+(s||'').split('/').pop()+':'+l+')');};
+        window.addEventListener('error',function(ev){var t=ev.target;if(t&&t.src)showErr('Could not load file: '+t.getAttribute('src'));},true);
+        </script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script charset="utf-8" src="data/WorldMap_0.js"></script>
+        <script charset="utf-8" src="data/historic_monument_Pakistan_1.js"></script>
+        <script charset="utf-8" src="data/pakistan_monuments_2.js"></script>
+        <script charset="utf-8" src="data/historic_monument_Pakistan_3.js"></script>
+        <script>
+        var map = L.map('map', {
+            zoomControl: false, maxZoom: 28, minZoom: 1
+        }).fitBounds([[23.52432292311216,52.20790969395654],[36.94405950809889,79.49377742808755]]);
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        L.control.zoom({ position: 'topleft' }).addTo(map);
+
+        // ---------- helpers ----------
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, function(c) {
+                return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+            });
+        }
+        // one "Name" line: whichever name is present (name, then name:ur, then name:en)
+        function getNames(props) {
+            var keys = ['name', 'name:ur', 'name:en'], v = '';
+            for (var i = 0; i < keys.length; i++) {
+                var t = props[keys[i]];
+                if (t !== null && t !== undefined && String(t).trim() !== '') { v = String(t).trim(); break; }
+            }
+            return '<b>Name:</b> <span dir="auto">' + (v ? escapeHtml(v) : '&mdash;') + '</span>';
+        }
+        // hover tooltip + click popup, both showing all three names
+        function bindName(feature, layer) {
+            var n = getNames(feature.properties);
+            layer.bindTooltip(n, {
+                direction: 'top',
+                offset: [0, -6],
+                sticky: true,
+                className: 'hover-label'
+            });
+            layer.bindPopup('<div class="name-popup">' + n + '</div>');
+        }
+        // dot that grows its outline on hover
+        function makeDot(style) {
+            return function(feature, latlng) {
+                var m = L.circleMarker(latlng, style);
+                m.on('mouseover', function() { m.setStyle({ weight: 3 }); });
+                m.on('mouseout', function() { m.setStyle({ weight: style.weight }); });
+                return m;
+            };
+        }
+
+        // ---------- World map: visible, but ignores the mouse ----------
+        map.createPane('pane_WorldMap_0');
+        map.getPane('pane_WorldMap_0').style.zIndex = 400;
+        var layer_WorldMap_0 = new L.geoJson(json_WorldMap_0, {
+            attribution: '',
+            interactive: false,
+            pane: 'pane_WorldMap_0',
+            style: function() {
+                return {
+                    pane: 'pane_WorldMap_0',
+                    opacity: 1,
+                    color: 'rgba(119,116,104,0.6039215686274509)',
+                    weight: 1.0,
+                    fill: true,
+                    fillOpacity: 1,
+                    fillColor: 'rgba(224,220,202,0.6039215686274509)',
+                    interactive: false
+                };
+            }
+        });
+        map.addLayer(layer_WorldMap_0);
+
+        // a missing or broken data file shows a warning instead of stopping the whole map
+        ['json_historic_monument_Pakistan_1', 'json_pakistan_monuments_2', 'json_historic_monument_Pakistan_3'].forEach(function(v) {
+            if (typeof window[v] === 'undefined') {
+                showErr('data/' + v.replace('json_', '') + '.js is missing or does not define ' + v);
+                window[v] = { type: 'FeatureCollection', features: [] };
+            }
+        });
+
+        // ---------- Only these monuments are drawn ----------
+        var ALLOWED_NAMES = [
+        "درگاھ حضرت جواری شاہ",
+        "دربار حضرت خواجہ محمد اکبار غریب نواز",
+        "مزار مبارک پیر سید صادق علی شاہ بخاری صعب",
+        "شاھ بابا مزار",
+        "دربار پیر سید محمودالحسن گیلانی پٹی شریف",
+        "پیر سید عالم علی شاہ گیلانی مزار",
+        "پیر سید عالم علی شاہ گیلانی مزار",
+        "صوفی مولوی محمد نواب علی قبر",
+        "دربار میراں پاک نارنگ",
+        "بابا پیر حافظ نور شاہ",
+        "بٹھک حضرت پیرمہرعلی شاہؒ"
+];
+        var INVISIBLE = /[\u200b\u200e\u200f\ufeff\u202a-\u202e\u2066-\u2069]/g;
+        function cleanName(s) {
+            return String(s == null ? '' : s).replace(INVISIBLE, '').split(/\s+/).join(' ').trim();
+        }
+        var allowedSet = {};
+        ALLOWED_NAMES.forEach(function(n) { allowedSet[cleanName(n)] = true; });
+        // a feature is added only if one of its names is in the list
+        function isAllowed(feature) {
+            var p = feature.properties || {};
+            return ['name', 'name:ur', 'name:en', 'alt_name'].some(function(k) {
+                var v = cleanName(p[k]);
+                return v !== '' && allowedSet[v] === true;
+            });
+        }
+
+        // ---------- Points layer 1 (purple) ----------
+        var style_points_1 = {
+            pane: 'pane_historic_monument_Pakistan_1',
+            radius: 6.0, opacity: 1, color: 'rgba(35,35,35,1.0)', weight: 1,
+            fill: true, fillOpacity: 1, fillColor: 'rgba(152,125,183,1.0)', interactive: true
+        };
+        map.createPane('pane_historic_monument_Pakistan_1');
+        map.getPane('pane_historic_monument_Pakistan_1').style.zIndex = 401;
+        var layer_historic_monument_Pakistan_1 = new L.geoJson(json_historic_monument_Pakistan_1, {
+            attribution: '', pane: 'pane_historic_monument_Pakistan_1',
+            filter: isAllowed, onEachFeature: bindName, pointToLayer: makeDot(style_points_1)
+        });
+        map.addLayer(layer_historic_monument_Pakistan_1);
+
+        // ---------- Points layer 2 (pink) ----------
+        var style_points_2 = {
+            pane: 'pane_pakistan_monuments_2',
+            radius: 6.0, opacity: 1, color: 'rgba(35,35,35,1.0)', weight: 1,
+            fill: true, fillOpacity: 1, fillColor: 'rgba(225,89,137,1.0)', interactive: true
+        };
+        map.createPane('pane_pakistan_monuments_2');
+        map.getPane('pane_pakistan_monuments_2').style.zIndex = 402;
+        var layer_pakistan_monuments_2 = new L.geoJson(json_pakistan_monuments_2, {
+            attribution: '', pane: 'pane_pakistan_monuments_2',
+            filter: isAllowed, onEachFeature: bindName, pointToLayer: makeDot(style_points_2)
+        });
+        map.addLayer(layer_pakistan_monuments_2);
+
+        // ---------- Polygon layer 3 ----------
+        map.createPane('pane_historic_monument_Pakistan_3');
+        map.getPane('pane_historic_monument_Pakistan_3').style.zIndex = 403;
+        var layer_historic_monument_Pakistan_3 = new L.geoJson(json_historic_monument_Pakistan_3, {
+            attribution: '', pane: 'pane_historic_monument_Pakistan_3',
+            filter: isAllowed, onEachFeature: bindName,
+            style: function() {
+                return { pane: 'pane_historic_monument_Pakistan_3', opacity: 1, color: 'rgba(35,35,35,1.0)',
+                         weight: 1.0, fill: true, fillOpacity: 1, fillColor: 'rgba(232,113,141,1.0)', interactive: true };
+            }
+        });
+        map.addLayer(layer_historic_monument_Pakistan_3);
+
+        if (typeof layer_pakistan_monuments_2 !== 'undefined') { console.log('dots drawn:', layer_historic_monument_Pakistan_1.getLayers().length, layer_pakistan_monuments_2.getLayers().length, layer_historic_monument_Pakistan_3.getLayers().length); }
+        </script>
+    </body>
+</html>
